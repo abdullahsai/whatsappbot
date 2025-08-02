@@ -1,9 +1,11 @@
 import os
+import logging
 from flask import Flask, request, Response
 from functools import wraps
 from twilio.request_validator import RequestValidator
 
 app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
 
 # Load Basic Auth credentials from environment
 WEBHOOK_USER = os.environ.get("WEBHOOK_USER")
@@ -11,6 +13,8 @@ WEBHOOK_PASS = os.environ.get("WEBHOOK_PASS")
 
 # Twilio Auth Token (for signature validation)
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+if not TWILIO_AUTH_TOKEN:
+    app.logger.warning("TWILIO_AUTH_TOKEN is not set")
 
 def check_auth(username, password):
     return username == WEBHOOK_USER and password == WEBHOOK_PASS
@@ -35,12 +39,22 @@ def requires_auth(f):
     return decorated
 
 def is_valid_twilio_request(request):
+    if not TWILIO_AUTH_TOKEN:
+        app.logger.error("Missing Twilio auth token")
+        return False
+
+    signature = request.headers.get("X-Twilio-Signature", "")
+    if not signature:
+        app.logger.warning("X-Twilio-Signature header missing")
+
     validator = RequestValidator(TWILIO_AUTH_TOKEN)
     request_valid = validator.validate(
         request.url,
         request.form,
-        request.headers.get("X-Twilio-Signature", "")
+        signature,
     )
+    if not request_valid:
+        app.logger.warning("Twilio signature validation failed")
     return request_valid
 
 @app.before_request
@@ -54,19 +68,18 @@ def index():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    print("🔔 /webhook was called")
-    print("Headers:", dict(request.headers))
-    print("URL:", request.url)
-    print("Form data:", request.form)
+    app.logger.info("/webhook was called")
+    app.logger.debug("Headers: %s", dict(request.headers))
+    app.logger.debug("URL: %s", request.url)
+    app.logger.debug("Form data: %s", request.form)
 
     if not is_valid_twilio_request(request):
-            print("❌ Twilio signature check failed")
-    return Response("Invalid signature", status=403)
+        return Response("Invalid signature", status=403)
 
     from_number = request.form.get("From")
     body = request.form.get("Body")
 
-    print(f"Message from {from_number}: {body}")
+    app.logger.info("Message from %s: %s", from_number, body)
 
     # Reply message (for TwiML)
     response_message = f"Echo: {body}"
