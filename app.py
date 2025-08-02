@@ -2,9 +2,11 @@ import os
 import logging
 from flask import Flask, request, Response
 from functools import wraps
+from werkzeug.middleware.proxy_fix import ProxyFix
 from twilio.request_validator import RequestValidator
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 logging.basicConfig(level=logging.INFO)
 
 # Load Basic Auth credentials from environment
