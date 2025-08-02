@@ -69,7 +69,12 @@ def index():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     app.logger.info("/webhook was called")
-    app.logger.debug("Headers: %s", dict(request.headers))
+
+    signature = request.headers.get("X-Twilio-Signature", "")
+    app.logger.info("X-Twilio-Signature: %s", signature)
+
+    app.logger.info("Headers: %s", dict(request.headers))
+    app.logger.info("Body: %s", request.get_data(as_text=True))
     app.logger.debug("URL: %s", request.url)
     app.logger.debug("Form data: %s", request.form)
 
