@@ -1,0 +1,15 @@
+# Python compiled files
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment config
+.env
+
+# VSCode or JetBrains config (optional, if you use these)
+.vscode/
+.idea/
+
+# OS-specific junk
+.DS_Store
+Thumbs.db
