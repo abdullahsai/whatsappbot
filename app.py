@@ -98,7 +98,7 @@ def webhook():
 
     # Generate a reply using Gemini
     try:
-        model = genai.GenerativeModel("gemini-pro")
+        model = genai.GenerativeModel("gemini-1.5-pro")
         gemini_reply = model.generate_content(body).text.strip()
         response_message = gemini_reply or "Sorry, I couldn't generate a reply."
     except Exception as exc:
