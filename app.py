@@ -4,6 +4,7 @@ from flask import Flask, request, Response
 from functools import wraps
 from werkzeug.middleware.proxy_fix import ProxyFix
 from twilio.request_validator import RequestValidator
+import google.generativeai as genai
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -17,6 +18,13 @@ WEBHOOK_PASS = os.environ.get("WEBHOOK_PASS")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 if not TWILIO_AUTH_TOKEN:
     app.logger.warning("TWILIO_AUTH_TOKEN is not set")
+
+# Gemini API Key
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+else:
+    app.logger.warning("GEMINI_API_KEY is not set")
 
 def check_auth(username, password):
     return username == WEBHOOK_USER and password == WEBHOOK_PASS
@@ -88,9 +96,16 @@ def webhook():
 
     app.logger.info("Message from %s: %s", from_number, body)
 
-    # Reply message (for TwiML)
-    response_message = f"Echo: {body}"
-    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    # Generate a reply using Gemini
+    try:
+        model = genai.GenerativeModel("gemini-pro")
+        gemini_reply = model.generate_content(body).text.strip()
+        response_message = gemini_reply or "Sorry, I couldn't generate a reply."
+    except Exception as exc:
+        app.logger.exception("Gemini API call failed: %s", exc)
+        response_message = "Sorry, I couldn't generate a reply."
+
+    twiml = f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <Response>
     <Message>{response_message}</Message>
 </Response>"""
