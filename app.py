@@ -27,6 +27,11 @@ if not OPENROUTER_API_KEY:
 openai.api_key = OPENROUTER_API_KEY
 openai.api_base = "https://openrouter.ai/api/v1"
 
+# OpenRouter model (defaults to Meta Llama 3.1 70B Instruct)
+OPENROUTER_MODEL = os.environ.get(
+    "OPENROUTER_MODEL", "meta-llama/Meta-Llama-3.1-70B-Instruct"
+)
+
 def check_auth(username, password):
     return username == WEBHOOK_USER and password == WEBHOOK_PASS
 
@@ -100,7 +105,7 @@ def webhook():
     # Generate a reply using OpenRouter
     try:
         response = openai.ChatCompletion.create(
-            model="meta-llama/Meta-Llama-3-70B-Instruct",
+            model=OPENROUTER_MODEL,
             messages=[{"role": "user", "content": body}]
         )
         if response.choices:

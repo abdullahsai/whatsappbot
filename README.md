@@ -39,6 +39,7 @@ The application relies on the following environment variables:
 | `WEBHOOK_USER` | Username for HTTP Basic Auth |
 | `WEBHOOK_PASS` | Password for HTTP Basic Auth |
 | `OPENROUTER_API_KEY` | API key for OpenRouter |
+| `OPENROUTER_MODEL` | (Optional) OpenRouter model to use (defaults to `meta-llama/Meta-Llama-3.1-70B-Instruct`) |
 
 Set these variables locally (e.g. in a `.env` file or via your shell) or in
 CapRover's *App Configs → Environment Variables* panel.
