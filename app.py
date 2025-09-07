@@ -21,11 +21,11 @@ if not TWILIO_AUTH_TOKEN:
 
 # OpenRouter API Key
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-if OPENROUTER_API_KEY:
-    openai.api_key = OPENROUTER_API_KEY
-    openai.base_url = "https://openrouter.ai/api/v1"
-else:
-    app.logger.warning("OPENROUTER_API_KEY is not set")
+if not OPENROUTER_API_KEY:
+    raise RuntimeError("OPENROUTER_API_KEY is not set")
+
+openai.api_key = OPENROUTER_API_KEY
+openai.api_base = "https://openrouter.ai/api/v1"
 
 def check_auth(username, password):
     return username == WEBHOOK_USER and password == WEBHOOK_PASS
