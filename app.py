@@ -4,7 +4,7 @@ from flask import Flask, request, Response
 from functools import wraps
 from werkzeug.middleware.proxy_fix import ProxyFix
 from twilio.request_validator import RequestValidator
-import google.generativeai as genai
+import openai
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -19,12 +19,13 @@ TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 if not TWILIO_AUTH_TOKEN:
     app.logger.warning("TWILIO_AUTH_TOKEN is not set")
 
-# Gemini API Key
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+# OpenRouter API Key
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+if OPENROUTER_API_KEY:
+    openai.api_key = OPENROUTER_API_KEY
+    openai.base_url = "https://openrouter.ai/api/v1"
 else:
-    app.logger.warning("GEMINI_API_KEY is not set")
+    app.logger.warning("OPENROUTER_API_KEY is not set")
 
 def check_auth(username, password):
     return username == WEBHOOK_USER and password == WEBHOOK_PASS
@@ -96,13 +97,18 @@ def webhook():
 
     app.logger.info("Message from %s: %s", from_number, body)
 
-    # Generate a reply using Gemini
+    # Generate a reply using OpenRouter
     try:
-        model = genai.GenerativeModel("gemini-1.5-pro")
-        gemini_reply = model.generate_content(body).text.strip()
-        response_message = gemini_reply or "Sorry, I couldn't generate a reply."
+        response = openai.ChatCompletion.create(
+            model="meta-llama/Meta-Llama-3-70B-Instruct",
+            messages=[{"role": "user", "content": body}]
+        )
+        if response.choices:
+            response_message = response.choices[0].message["content"].strip()
+        else:
+            response_message = "Sorry, I couldn't generate a reply."
     except Exception as exc:
-        app.logger.exception("Gemini API call failed: %s", exc)
+        app.logger.exception("OpenRouter API call failed: %s", exc)
         response_message = "Sorry, I couldn't generate a reply."
 
     twiml = f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
