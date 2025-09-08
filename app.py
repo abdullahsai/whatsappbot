@@ -1,9 +1,12 @@
 import os
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from flask import Flask, request, Response
 from functools import wraps
 from werkzeug.middleware.proxy_fix import ProxyFix
 from twilio.request_validator import RequestValidator
+from twilio.twiml.messaging_response import MessagingResponse
+from twilio.rest import Client
 import openai
 
 app = Flask(__name__)
@@ -14,10 +17,19 @@ logging.basicConfig(level=logging.INFO)
 WEBHOOK_USER = os.environ.get("WEBHOOK_USER")
 WEBHOOK_PASS = os.environ.get("WEBHOOK_PASS")
 
-# Twilio Auth Token (for signature validation)
+# Twilio credentials
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+TWILIO_WHATSAPP_NUMBER = os.environ.get("TWILIO_WHATSAPP_NUMBER")
+
 if not TWILIO_AUTH_TOKEN:
     app.logger.warning("TWILIO_AUTH_TOKEN is not set")
+
+twilio_client = None
+if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+    twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+else:
+    app.logger.warning("Twilio REST client not fully configured")
 
 # OpenRouter API Key
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
@@ -26,6 +38,10 @@ if not OPENROUTER_API_KEY:
 
 openai.api_key = OPENROUTER_API_KEY
 openai.api_base = "https://openrouter.ai/api/v1"
+
+# Thread pool for background LLM calls
+executor = ThreadPoolExecutor(max_workers=4)
+LLM_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", "10"))
 
 # OpenRouter model (defaults to Meta Llama 3.1 70B Instruct)
 OPENROUTER_MODEL = os.environ.get(
@@ -102,25 +118,54 @@ def webhook():
 
     app.logger.info("Message from %s: %s", from_number, body)
 
-    # Generate a reply using OpenRouter
-    try:
+    def generate_reply(prompt: str) -> str:
         response = openai.ChatCompletion.create(
             model=OPENROUTER_MODEL,
-            messages=[{"role": "user", "content": body}]
+            messages=[{"role": "user", "content": prompt}]
         )
         if response.choices:
-            response_message = response.choices[0].message["content"].strip()
-        else:
-            response_message = "Sorry, I couldn't generate a reply."
-    except Exception as exc:
-        app.logger.exception("OpenRouter API call failed: %s", exc)
-        response_message = "Sorry, I couldn't generate a reply."
+            return response.choices[0].message["content"].strip()
+        return "Sorry, I couldn't generate a reply."
 
-    twiml = f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-<Response>
-    <Message>{response_message}</Message>
-</Response>"""
-    return Response(twiml, mimetype="application/xml")
+    future = executor.submit(generate_reply, body)
+
+    try:
+        response_message = future.result(timeout=LLM_TIMEOUT)
+        resp = MessagingResponse()
+        resp.message(response_message)
+        return Response(str(resp), mimetype="application/xml")
+    except TimeoutError:
+        app.logger.info("LLM call timed out; sending placeholder and will reply via REST API")
+
+        def send_delayed_reply(fut):
+            try:
+                final_message = fut.result()
+            except Exception as exc:
+                app.logger.exception("LLM call failed after timeout: %s", exc)
+                final_message = "Sorry, I couldn't generate a reply."
+
+            if twilio_client and TWILIO_WHATSAPP_NUMBER:
+                try:
+                    twilio_client.messages.create(
+                        body=final_message,
+                        from_=TWILIO_WHATSAPP_NUMBER,
+                        to=from_number,
+                    )
+                except Exception as exc:
+                    app.logger.exception("Failed to send message via Twilio REST API: %s", exc)
+            else:
+                app.logger.error("Twilio client not configured; cannot send delayed reply")
+
+        future.add_done_callback(send_delayed_reply)
+
+        resp = MessagingResponse()
+        resp.message("Working on it…")
+        return Response(str(resp), mimetype="application/xml")
+    except Exception as exc:
+        app.logger.exception("LLM processing failed: %s", exc)
+        resp = MessagingResponse()
+        resp.message("Sorry, I couldn't generate a reply.")
+        return Response(str(resp), mimetype="application/xml")
 
 @app.route("/admin")
 def admin_panel():
