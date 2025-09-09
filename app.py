@@ -142,7 +142,14 @@ def webhook():
     def generate_reply(prompt: str) -> str:
         response = openai.ChatCompletion.create(
             model=OPENROUTER_MODEL,
-            messages=[{"role": "user", "content": prompt}]
+            # Twilio imposes a 1600-character limit per message. Capping tokens
+            # helps keep typical responses safely below this ceiling (≈4 chars
+            # per token gives ~1400 characters at 350 tokens).
+            max_tokens=350,
+            messages=[
+                {"role": "system", "content": "Keep responses concise."},
+                {"role": "user", "content": prompt},
+            ],
         )
         if response.choices:
             return response.choices[0].message["content"].strip()
