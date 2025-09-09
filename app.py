@@ -31,6 +31,27 @@ if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
 else:
     app.logger.warning("Twilio REST client not fully configured")
 
+
+def send_in_chunks(body: str, from_: str, to_: str, chunk_size: int = 1600):
+    """Send a potentially long message in chunks via the Twilio REST client.
+
+    Twilio imposes a maximum message length of 1600 characters for WhatsApp
+    messages. This helper splits messages exceeding that limit into sequential
+    pieces and sends them individually. Each chunk is logged to simplify
+    debugging.
+    """
+
+    if not twilio_client:
+        app.logger.error("Twilio client not configured; cannot send message chunks")
+        return
+
+    total_chunks = (len(body) + chunk_size - 1) // chunk_size
+    for i in range(0, len(body), chunk_size):
+        chunk_number = i // chunk_size + 1
+        chunk = body[i : i + chunk_size]
+        app.logger.info("Sending chunk %d/%d: %s", chunk_number, total_chunks, chunk)
+        twilio_client.messages.create(body=chunk, from_=from_, to=to_)
+
 # OpenRouter API Key
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 if not OPENROUTER_API_KEY:
@@ -146,15 +167,15 @@ def webhook():
 
             if twilio_client and TWILIO_WHATSAPP_NUMBER:
                 try:
-                    twilio_client.messages.create(
-                        body=final_message,
-                        from_=TWILIO_WHATSAPP_NUMBER,
-                        to=from_number,
-                    )
+                    send_in_chunks(final_message, TWILIO_WHATSAPP_NUMBER, from_number)
                 except Exception as exc:
-                    app.logger.exception("Failed to send message via Twilio REST API: %s", exc)
+                    app.logger.exception(
+                        "Failed to send message via Twilio REST API: %s", exc
+                    )
             else:
-                app.logger.error("Twilio client not configured; cannot send delayed reply")
+                app.logger.error(
+                    "Twilio client not configured; cannot send delayed reply"
+                )
 
         future.add_done_callback(send_delayed_reply)
 
